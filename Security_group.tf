@@ -1,3 +1,4 @@
+resource "aws_security_group" "sonarQube-SG" {
   name        = "sonarQube-SG"
   description = "Allow port 9000 inbound traffic and all outbound traffic"
   vpc_id      = aws_vpc.webapp_VPC.id
