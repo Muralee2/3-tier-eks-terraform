@@ -34,7 +34,20 @@ jobs:
           terraform init
           terraform workspace select default || terraform workspace new default
 
-      # PHASE 1: Destroy dependent resources (EC2, NAT, EIP, etc.)
+      # 🔧 Clean up Public IPs & ENIs to avoid IGW/subnet dependency errors
+      - name: AWS Cleanup (EIPs & ENIs)
+        run: |
+          echo "Disassociating Elastic IPs..."
+          for assoc in $(aws ec2 describe-addresses --query "Addresses[*].AssociationId" --output text); do
+            aws ec2 disassociate-address --association-id $assoc || true
+          done
+
+          echo "Deleting available network interfaces..."
+          for eni in $(aws ec2 describe-network-interfaces --query "NetworkInterfaces[?Status=='available'].NetworkInterfaceId" --output text); do
+            aws ec2 delete-network-interface --network-interface-id $eni || true
+          done
+
+      # PHASE 1: Destroy EC2, NAT, EIPs, ENIs
       - name: Destroy Compute & Network Interfaces
         run: |
           terraform destroy \
@@ -44,7 +57,7 @@ jobs:
             -target=aws_network_interface.my_eni \
             -auto-approve || true
 
-      # PHASE 2: Destroy subnet, route tables, internet gateway
+      # PHASE 2: Destroy subnet, route table, IGW
       - name: Destroy Subnet-related Networking
         run: |
           terraform destroy \
@@ -55,6 +68,6 @@ jobs:
             -target=aws_internet_gateway.igw \
             -auto-approve || true
 
-      # PHASE 3: Destroy remaining resources (VPC, SGs, etc.)
+      # PHASE 3: Destroy everything else (VPC, SGs, etc.)
       - name: Destroy Remaining Infrastructure
         run: terraform destroy -auto-approve
