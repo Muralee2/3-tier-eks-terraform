@@ -30,22 +30,31 @@ jobs:
           aws-region: ap-south-1
 
       - name: Terraform Init
-        run: terraform init
-
-      # Step 1: Destroy EC2 instances or NAT gateways
-      - name: Destroy Dependent Resources
         run: |
-          terraform destroy -target=aws_instance.my_instance -target=aws_nat_gateway.my_nat -target=aws_eip.my_eip -auto-approve || true
+          terraform init
+          terraform workspace select default || terraform workspace new default
 
-      # Step 2: Destroy subnets and route associations
-      - name: Destroy Subnets and IGW
+      # PHASE 1: Destroy dependent resources (EC2, NAT, EIP, etc.)
+      - name: Destroy Compute & Network Interfaces
         run: |
-          terraform destroy -target=aws_route_table_association.public_rta \
-                            -target=aws_subnet.subnet1 \
-                            -target=aws_subnet.subnet2 \
-                            -target=aws_internet_gateway.igw \
-                            -auto-approve || true
+          terraform destroy \
+            -target=aws_instance.my_instance \
+            -target=aws_nat_gateway.my_nat \
+            -target=aws_eip.my_eip \
+            -target=aws_network_interface.my_eni \
+            -auto-approve || true
 
-      # Step 3: Destroy the rest
-      - name: Destroy All Remaining Resources
+      # PHASE 2: Destroy subnet, route tables, internet gateway
+      - name: Destroy Subnet-related Networking
+        run: |
+          terraform destroy \
+            -target=aws_route_table_association.public_rta \
+            -target=aws_route_table.public_rt \
+            -target=aws_subnet.subnet1 \
+            -target=aws_subnet.subnet2 \
+            -target=aws_internet_gateway.igw \
+            -auto-approve || true
+
+      # PHASE 3: Destroy remaining resources (VPC, SGs, etc.)
+      - name: Destroy Remaining Infrastructure
         run: terraform destroy -auto-approve
