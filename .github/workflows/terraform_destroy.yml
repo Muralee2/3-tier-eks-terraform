@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   destroy:
-    name: Terraform Destroy with Dependency Order
+    name: Terraform Destroy with Dependency Cleanup
     runs-on: ubuntu-latest
     environment: production
 
@@ -34,17 +34,25 @@ jobs:
           terraform init
           terraform workspace select default || terraform workspace new default
 
-      # 🔧 Clean up Public IPs & ENIs to avoid IGW/subnet dependency errors
-      - name: AWS Cleanup (EIPs & ENIs)
+      # 🧹 Pre-cleanup: Disassociate EIPs, delete ENIs and NATs
+      - name: AWS Pre-Destroy Cleanup (EIPs, ENIs, NATs)
         run: |
-          echo "Disassociating Elastic IPs..."
-          for assoc in $(aws ec2 describe-addresses --query "Addresses[*].AssociationId" --output text); do
-            aws ec2 disassociate-address --association-id $assoc || true
+          echo "🔍 Disassociating Elastic IPs..."
+          for assoc_id in $(aws ec2 describe-addresses --region ap-south-1 --query "Addresses[?AssociationId!=null].AssociationId" --output text); do
+            echo "➤ Disassociating $assoc_id"
+            aws ec2 disassociate-address --association-id "$assoc_id" --region ap-south-1 || true
           done
 
-          echo "Deleting available network interfaces..."
-          for eni in $(aws ec2 describe-network-interfaces --query "NetworkInterfaces[?Status=='available'].NetworkInterfaceId" --output text); do
-            aws ec2 delete-network-interface --network-interface-id $eni || true
+          echo "🧹 Deleting unattached ENIs..."
+          for eni_id in $(aws ec2 describe-network-interfaces --region ap-south-1 --query "NetworkInterfaces[?Status=='available'].NetworkInterfaceId" --output text); do
+            echo "➤ Deleting ENI $eni_id"
+            aws ec2 delete-network-interface --network-interface-id "$eni_id" --region ap-south-1 || true
+          done
+
+          echo "🧨 Deleting NAT Gateways..."
+          for nat_id in $(aws ec2 describe-nat-gateways --region ap-south-1 --query "NatGateways[?State!='deleted'].NatGatewayId" --output text); do
+            echo "➤ Deleting NAT Gateway $nat_id"
+            aws ec2 delete-nat-gateway --nat-gateway-id "$nat_id" --region ap-south-1 || true
           done
 
       # PHASE 1: Destroy EC2, NAT, EIPs, ENIs
@@ -57,7 +65,7 @@ jobs:
             -target=aws_network_interface.my_eni \
             -auto-approve || true
 
-      # PHASE 2: Destroy subnet, route table, IGW
+      # PHASE 2: Destroy subnets, route tables, internet gateway
       - name: Destroy Subnet-related Networking
         run: |
           terraform destroy \
@@ -68,6 +76,6 @@ jobs:
             -target=aws_internet_gateway.igw \
             -auto-approve || true
 
-      # PHASE 3: Destroy everything else (VPC, SGs, etc.)
+      # PHASE 3: Destroy remaining infrastructure
       - name: Destroy Remaining Infrastructure
         run: terraform destroy -auto-approve
