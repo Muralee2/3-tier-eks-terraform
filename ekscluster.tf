@@ -1,6 +1,6 @@
 
 resource "aws_eks_cluster" "webapp" {
-  name     = "webapp"
+  name     = "webapp1"
   role_arn = aws_iam_role.EKS_Cluster_Role.arn
 
   vpc_config {
