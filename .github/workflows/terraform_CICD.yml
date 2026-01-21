@@ -46,7 +46,7 @@ jobs:
 
       - name: Update kubeconfig and Deploy App
         env:
-          AWS_REGION: us-east-1
+          AWS_REGION: ap-south-1
           CLUSTER_NAME: webapp  # ✅ Replace with actual cluster name or set as a GitHub secret
         run: |
           aws eks --region $AWS_REGION update-kubeconfig --name $CLUSTER_NAME
